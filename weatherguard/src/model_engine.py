@@ -7,7 +7,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import (
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    f1_score,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+)
 from sklearn.model_selection import train_test_split
 
 from .data_engine import generate_historical_dataset
@@ -50,6 +58,8 @@ class WeatherGuardEngine:
         ]
         self.threshold = 0.5
         self.is_fitted = False
+        self._evaluation_features: pd.DataFrame | None = None
+        self._evaluation_target: pd.Series | None = None
 
     def fit(self, df: pd.DataFrame | None = None) -> "WeatherGuardEngine":
         """Train the model on synthetic historical NWP + ERA5 target data."""
@@ -59,19 +69,52 @@ class WeatherGuardEngine:
         features = df[self.feature_columns].copy()
         target = df["is_bust"].astype(int)
 
-        X_train, X_valid, y_train, y_valid = train_test_split(
+        X_train, X_holdout, y_train, y_holdout = train_test_split(
             features,
             target,
-            test_size=0.25,
+            test_size=0.30,
             random_state=self.random_state,
             stratify=target,
         )
+        X_calibration, X_test, y_calibration, y_test = train_test_split(
+            X_holdout,
+            y_holdout,
+            test_size=0.50,
+            random_state=self.random_state,
+            stratify=y_holdout,
+        )
 
         self.model.fit(X_train, y_train)
-        valid_proba = self.model.predict_proba(X_valid)[:, 1]
-        self._calibrate_threshold(y_valid.to_numpy(), valid_proba)
+        calibration_proba = self.model.predict_proba(X_calibration)[:, 1]
+        self._calibrate_threshold(y_calibration.to_numpy(), calibration_proba)
+        self._evaluation_features = X_test.copy()
+        self._evaluation_target = y_test.copy()
         self.is_fitted = True
         return self
+
+    def evaluate(self) -> dict[str, Any]:
+        """Return metrics for the held-out test partition used by the prototype."""
+        if not self.is_fitted:
+            self.fit()
+        if self._evaluation_features is None or self._evaluation_target is None:
+            raise RuntimeError("Evaluation partition is unavailable; fit the engine first.")
+
+        y_true = self._evaluation_target.to_numpy()
+        y_proba = self.model.predict_proba(self._evaluation_features)[:, 1]
+        y_pred = (y_proba >= self.threshold).astype(int)
+        matrix = confusion_matrix(y_true, y_pred, labels=[0, 1])
+
+        return {
+            "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+            "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+            "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+            "pr_auc": float(average_precision_score(y_true, y_proba)),
+            "brier_score": float(brier_score_loss(y_true, y_proba)),
+            "bust_samples": int(np.sum(y_true == 1)),
+            "non_bust_samples": int(np.sum(y_true == 0)),
+            "confusion_matrix": matrix.tolist(),
+            "threshold": float(self.threshold),
+        }
 
     def _calibrate_threshold(self, y_true: np.ndarray, y_proba: np.ndarray) -> None:
         """Tune the decision threshold to meet a safety-critical recall target."""

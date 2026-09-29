@@ -77,6 +77,29 @@ pytest
    - forecast passport cards and high-risk cell alerts.
 4. The user can inspect reliability by region (North, South, East, West, Central, or ALL) and by lead time (Day 1 to Day 10).
 
+## Prototype Evidence (Generated Run)
+
+The dashboard's **Model Evidence** tab runs one reproducible end-to-end example from
+the generated historical dataset. In the current prototype run, an Andhra-region D5
+cell produced:
+
+| Forecast rain | Reference rain | Expected error | Bust | Model probability | Reliability | Alert |
+| ---: | ---: | ---: | :---: | ---: | ---: | :---: |
+| 23.72 mm | 39.89 mm | 16.17 mm | YES | 48.85% | 51.1% | TRIGGERED |
+
+The model explanation for this cell is **High rainfall signal; Lead-time decay**.
+The held-out test partition for the same run produced precision **0.430**, recall
+**0.884**, F1 **0.578**, PR-AUC **0.504**, and Brier score **0.224**. It contained
+146 bust samples and 229 non-bust samples, with confusion matrix:
+
+```text
+                 Predicted non-bust    Predicted bust
+Actual non-bust          58                 171
+Actual bust              17                 129
+```
+
+These are synthetic-prototype results, not operational NWP validation results.
+
 ## How the Model Works
 
 The baseline model includes:

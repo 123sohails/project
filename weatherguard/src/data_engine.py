@@ -96,8 +96,8 @@ def generate_historical_dataset(n_samples: int = 2500) -> pd.DataFrame:
         )
         era5_reference = max(0.0, float(era5_reference))
 
-        # Realistic error growth with forecast lead time and moisture instability.
-        error_mm = abs(era5_reference - forecast_rain) + 0.7 * lead_time + rng.normal(0, 1.4)
+        # The verification error is the literal difference from the reference field.
+        error_mm = abs(era5_reference - forecast_rain)
         is_bust = bool((error_mm > 15.0) and (forecast_rain > 10.0))
 
         # Forecast-only feature set for the model; no ERA5 variables are kept.
